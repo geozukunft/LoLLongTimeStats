@@ -11,7 +11,8 @@ from typing import List
 from pyot.models import lol
 from pyot.core import Queue
 from pyot.utils import FrozenGenerator, shuffle_list
-
+from pyot.models.lol import match
+import pyot.core
 if platform.system() == 'Windows':
     from pyot.utils.internal import silence_proactor_pipe_deallocation
 
@@ -32,7 +33,7 @@ Settings(
         {
             "BACKEND": "pyot.stores.MongoDB",
             "DB": 'pyotdata',
-            "HOST": "127.0.0.1",
+            "HOST": "192.168.20.145",
             "PORT": 27017,
             "LOG_LEVEL": 30,
             "EXPIRATIONS": {
@@ -41,6 +42,8 @@ Settings(
                 "league_v4_summoner_entries": td(days=3650),
                 "league_v4_entries_by_division": td(days=3650),
                 "league_v4_league_by_league_id": td(days=3650),
+                "league_v4_challenger_league": td(days=1),
+                "league_v4_grandmaster_league": td(days=1),
                 "match_v4_match": td(days=3650),
                 "match_v4_timeline": td(days=3650),
                 "match_v4_matchlist": td(days=1),
@@ -60,7 +63,7 @@ Settings(
         },
         {
             "BACKEND": "pyot.stores.RiotAPI",
-            "API_KEY": "RGAPI-4be2cd22-7fd6-4365-b5e7-efe54aafc217",  # API KEY
+            "API_KEY": "RGAPI-e2510fbe-11d0-4e94-8ab6-16256720bcbd",  # API KEY
             "LOG_LEVEL": 30
         }
     ]
@@ -80,10 +83,25 @@ async def get_puuid(queue: Queue, summoner: lol.Summoner):
     summoner = await summoner.get(sid=queue.sid)
     return summoner.puuid
 
+async def get_accountid(queue: Queue, summoner: lol.Summoner):
+    summoner = await summoner.get(sid=queue.sid)
+    return summoner.account_id
+
+async def get_matchlists(queue: Queue, summoner: lol.Summoner):
+    summoner = await summoner.get(sid=queue.sid)
+    run: bool = True
+    index: int = 0
+    while run:
+        matchlist = await lol.MatchHistory(account_id=summoner.account_id, platform=summoner.platform).query(begin_index=index).get()
+        index += 100
+        if matchlist.end_index == index:
+            run = False
+        print(matchlist.start_index)
+    return matchlist
 
 async def pull_puuids():
     async with Queue() as queue:  # type: Queue
-        await queue.put(lol.ChallengerLeague(queue="RANKED_SOLO_5x5", platform="na1").get(sid=queue.sid))
+        #await queue.put(lol.ChallengerLeague(queue="RANKED_SOLO_5x5", platform="na1").get(sid=queue.sid))
         await queue.put(lol.MasterLeague(queue="RANKED_SOLO_5x5", platform="na1").get(sid=queue.sid))
         leagues = await queue.join()  # type: List[lol.ChallengerLeague]
 
@@ -97,6 +115,7 @@ async def pull_puuids():
 
         for summoner in summoners:
             await queue.put(get_puuid(queue, summoner))
+            await queue.put(get_matchlists(queue, summoner))
         print(await queue.join())
 
 
